@@ -12,6 +12,9 @@ fn main() -> Result<(), String> {
     let containing = find_containing_pairs(&pairs);
     println!("There are {containing} pairs where one completely contains the other.");
 
+    let overlapping = find_overlapping_pairs(&pairs);
+    println!("There are {overlapping} overlapping pairs.");
+
     Ok(())
 }
 
@@ -21,6 +24,9 @@ struct Assignment(u32, u32);
 impl Assignment {
     fn contains(&self, other: &Assignment) -> bool {
         self.0 <= other.0 && self.1 >= other.1
+    }
+    fn overlaps(&self, other: &Assignment) -> bool {
+        self.0 <= other.0 && self.1 >= other.0 || other.0 <= self.0 && other.1 >= self.0
     }
 }
 
@@ -54,6 +60,10 @@ fn find_containing_pairs(pairs: &[(Assignment, Assignment)]) -> usize {
         .count()
 }
 
+fn find_overlapping_pairs(pairs: &[(Assignment, Assignment)]) -> usize {
+    pairs.iter().filter(|(a, b)| a.overlaps(b)).count()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -76,5 +86,17 @@ mod test {
 
         // then
         assert_eq!(c, 2);
+    }
+
+    #[test]
+    fn find_overlapping_pairs_works_for_example() {
+        // given
+        let pairs = parse_pairs(EXAMPLE).expect("Expected successful parsing");
+
+        // when
+        let c = find_overlapping_pairs(&pairs);
+
+        // then
+        assert_eq!(c, 4);
     }
 }
