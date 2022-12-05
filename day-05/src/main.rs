@@ -10,10 +10,16 @@ fn main() -> Result<(), String> {
 
     let (initial_stacks, instructions) = parse_input(&content)?;
 
-    let done_stacks = run_instructions(initial_stacks, &instructions)?;
+    let done_stacks = run_instructions(initial_stacks.clone(), &instructions)?;
     println!(
         "The top of the stacks are '{}'",
         get_stack_tops(&done_stacks)
+    );
+
+    let done_9001 = its_over_9000(initial_stacks, &instructions)?;
+    println!(
+        "The top of the stacks, sorted with the CrateMover 9001 are {}",
+        get_stack_tops(&done_9001)
     );
 
     Ok(())
@@ -23,7 +29,7 @@ type Stack = Vec<char>;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct Instruction {
-    count: u32,
+    count: usize,
     from: usize,
     to: usize,
 }
@@ -78,7 +84,7 @@ fn parse_instruction(line: &str) -> Result<Instruction, String> {
     let (c, loc) = line
         .split_once(" from ")
         .ok_or_else(|| format!("unable to parse instruction '{line}': missing ' from '"))?;
-    let count: u32 = c
+    let count: usize = c
         .strip_prefix("move ")
         .ok_or_else(|| format!("unable to parse instruction '{line}': mossing 'move '"))?
         .parse()
@@ -128,6 +134,45 @@ fn run_instructions(
     Ok(stacks)
 }
 
+fn its_over_9000(
+    mut stacks: Vec<Stack>,
+    instructions: &[Instruction],
+) -> Result<Vec<Stack>, String> {
+    let mut temp: Stack = Vec::with_capacity(32);
+    for inst in instructions {
+        if inst.from == 0 || inst.from > stacks.len() {
+            return Err(format!(
+                "Faulty instruction, referencing out-of-bounds from-stack {}/{}",
+                inst.from,
+                stacks.len()
+            ));
+        }
+        if inst.to == 0 || inst.to > stacks.len() {
+            return Err(format!(
+                "Faulty instruction, referencing out-of-bounds to-stack {}/{}",
+                inst.from,
+                stacks.len()
+            ));
+        }
+        let from = inst.from - 1;
+        let to = inst.to - 1;
+        let count = inst.count;
+
+        if count > stacks[from].len() {
+            return Err(format!(
+                "trying to pick up {count} items from stack {from}, but it only has {0} items",
+                stacks[from].len()
+            ));
+        }
+        let bottom = stacks[from].len() - count;
+        temp.extend_from_slice(&stacks[from][bottom..stacks[from].len()]);
+        stacks[to].extend_from_slice(&temp);
+        stacks[from].resize(bottom, '☹');
+        temp.clear();
+    }
+    Ok(stacks)
+}
+
 fn get_stack_tops(stacks: &[Stack]) -> String {
     stacks
         .iter()
@@ -161,5 +206,17 @@ move 1 from 1 to 2
         // then
         let result_stacks = result.expect("expected successful run");
         assert_eq!(&get_stack_tops(&result_stacks), "CMZ");
+    }
+    #[test]
+    fn its_over_9000_works_for_example() {
+        // given
+        let (stacks, instructions) = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let result = its_over_9000(stacks, &instructions);
+
+        // then
+        let result_stacks = result.expect("expected successful run");
+        assert_eq!(&get_stack_tops(&result_stacks), "MCD");
     }
 }
