@@ -11,7 +11,13 @@ fn main() -> Result<(), String> {
     if let Some(offset) = start_of_packet_offset(&content) {
         println!("Start of packet marker after: {offset}");
     } else {
-        println!("No start of packet marker found");
+        println!("No start of packet marker found.");
+    }
+
+    if let Some(offset) = start_of_msg_offset(&content) {
+        println!("Start of message marker after: {offset}");
+    } else {
+        println!("no start of message marker found.");
     }
 
     Ok(())
@@ -36,12 +42,31 @@ fn start_of_packet_offset(input: &str) -> Option<usize> {
         .next()
 }
 
+fn start_of_msg_offset(input: &str) -> Option<usize> {
+    input
+        .as_bytes()
+        .windows(14)
+        .enumerate()
+        .filter(|(_, w)| {
+            let mut seen: [bool; 256] = [false; 256];
+            for c in *w {
+                if seen[*c as usize] {
+                    return false;
+                }
+                seen[*c as usize] = true;
+            }
+            true
+        })
+        .map(|(i, _)| i + 14)
+        .next()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn start_of_pacjet_offset_works_for_examples() {
+    fn start_of_packet_offset_works_for_examples() {
         assert_eq!(
             start_of_packet_offset("mjqjpqmgbljsphdztnvjfqwrcgsmlb"),
             Some(7)
@@ -61,6 +86,30 @@ mod test {
         assert_eq!(
             start_of_packet_offset("zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw"),
             Some(11)
+        );
+    }
+
+    #[test]
+    fn start_of_msg_offset_works_for_examples() {
+        assert_eq!(
+            start_of_msg_offset("mjqjpqmgbljsphdztnvjfqwrcgsmlb"),
+            Some(19)
+        );
+        assert_eq!(
+            start_of_msg_offset("bvwbjplbgvbhsrlpgdmjqwftvncz"),
+            Some(23)
+        );
+        assert_eq!(
+            start_of_msg_offset("nppdvjthqldpwncqszvftbrmjlhg"),
+            Some(23)
+        );
+        assert_eq!(
+            start_of_msg_offset("nznrnfrfntjfmvfwmzdfjlvtqnbhcprsg"),
+            Some(29)
+        );
+        assert_eq!(
+            start_of_msg_offset("zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw"),
+            Some(26)
         );
     }
 }
