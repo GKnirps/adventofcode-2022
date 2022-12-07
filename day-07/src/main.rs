@@ -13,6 +13,16 @@ fn main() -> Result<(), String> {
     let small_dir_sum = sum_small_dirs(&dir_tree);
     println!("The sum of all small dir sizes is {small_dir_sum}");
 
+    if dir_tree.size < 40_000_000 {
+        println!("There already is enough space.");
+    } else if let Some(freed_space) =
+        find_smallest_directory_to_delete(&dir_tree, dir_tree.size - 40_000_000)
+    {
+        println!("We can free up {freed_space} by removing the smallest directory that frees enough space.");
+    } else {
+        println!("We can't free enough space!");
+    }
+
     Ok(())
 }
 
@@ -95,6 +105,22 @@ fn sum_small_dirs(node: &FsNode) -> u64 {
     }
 }
 
+fn find_smallest_directory_to_delete(root: &FsNode, space_required: u64) -> Option<u64> {
+    if let FType::Dir(children) = &root.ftype {
+        children
+            .iter()
+            .filter_map(|child| find_smallest_directory_to_delete(child, space_required))
+            .min()
+            .or(if root.size >= space_required {
+                Some(root.size)
+            } else {
+                None
+            })
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -134,5 +160,17 @@ $ ls
 
         // then
         assert_eq!(sum, 95437);
+    }
+
+    #[test]
+    fn find_smallest_directory_to_delete_works_for_example() {
+        // given
+        let tree = construct_directory_tree(EXAMPLE).expect("Expected successfull tree building");
+
+        // when
+        let size = find_smallest_directory_to_delete(&tree, 8381165);
+
+        // then
+        assert_eq!(size, Some(24933642));
     }
 }
