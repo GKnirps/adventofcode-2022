@@ -14,6 +14,12 @@ fn main() -> Result<(), String> {
     let visible_trees = count_visible_trees(&visibility);
     println!("There are {visible_trees} trees visible from the outside");
 
+    if let Some(rating) = max_scenic_rating(&grid) {
+        println!("The highest scenic rating is {rating}.");
+    } else {
+        println!("Where have all the trees gone?");
+    }
+
     Ok(())
 }
 
@@ -177,6 +183,49 @@ fn count_visible_trees(grid: &Grid<VisibleFrom>) -> usize {
     grid.trees.iter().filter(|tree| tree.visible()).count()
 }
 
+fn scenic_rating(grid: &Grid<u8>, x: usize, y: usize) -> u32 {
+    let width = grid.width;
+    let height = grid.height();
+    let tree_height = grid.at(x, y);
+    // screw this, let's just brute force it
+    let mut ltrees: u32 = 0;
+    for dx in 1..=x {
+        ltrees += 1;
+        if grid.at(x - dx, y) >= tree_height {
+            break;
+        }
+    }
+    let mut rtrees: u32 = 0;
+    for dx in (x + 1)..width {
+        rtrees += 1;
+        if grid.at(dx, y) >= tree_height {
+            break;
+        }
+    }
+    let mut ttrees: u32 = 0;
+    for dy in 1..=y {
+        ttrees += 1;
+        if grid.at(x, y - dy) >= tree_height {
+            break;
+        }
+    }
+    let mut btrees: u32 = 0;
+    for dy in (y + 1)..height {
+        btrees += 1;
+        if grid.at(x, dy) >= tree_height {
+            break;
+        }
+    }
+    ltrees * rtrees * ttrees * btrees
+}
+
+fn max_scenic_rating(grid: &Grid<u8>) -> Option<u32> {
+    (0..grid.width)
+        .flat_map(|x| (0..grid.height()).map(move |y| (x, y)))
+        .map(|(x, y)| scenic_rating(grid, x, y))
+        .max()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -199,5 +248,17 @@ mod test {
 
         // then
         assert_eq!(count, 21);
+    }
+
+    #[test]
+    fn max_scenic_rating_works_for_example() {
+        // given
+        let trees = parse_grid(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let rating = max_scenic_rating(&trees);
+
+        // then
+        assert_eq!(rating, Some(8));
     }
 }
