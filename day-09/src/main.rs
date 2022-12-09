@@ -13,6 +13,9 @@ fn main() -> Result<(), String> {
     let tail_count = count_tail_tiles(&instructions);
     println!("The tail visited {tail_count} tiles at least once.");
 
+    let long_tail_count = count_long_tail_tiles(&instructions);
+    println!("The tail of the long rope visited {long_tail_count} tiles at least once.");
+
     Ok(())
 }
 
@@ -73,6 +76,30 @@ fn count_tail_tiles(instructions: &[Instruction]) -> usize {
     tail_trail.len()
 }
 
+fn count_long_tail_tiles(instructions: &[Instruction]) -> usize {
+    let mut tail_trail: HashSet<V2> = HashSet::with_capacity(instructions.len());
+    let mut rope: [V2; 10] = [(0, 0); 10];
+    tail_trail.insert(rope[0]);
+    for inst in instructions {
+        let (dir, n) = inst;
+        let v: V2 = match dir {
+            Dir::U => (0, -1),
+            Dir::R => (1, 0),
+            Dir::D => (0, 1),
+            Dir::L => (-1, 0),
+        };
+        for _ in 0..*n {
+            rope[0].0 += v.0;
+            rope[0].1 += v.1;
+            for i in 1..rope.len() {
+                rope[i] = move_tail(rope[i - 1], rope[i]);
+            }
+            tail_trail.insert(rope[rope.len() - 1]);
+        }
+    }
+    tail_trail.len()
+}
+
 fn move_tail(head: V2, tail: V2) -> V2 {
     let dx = (head.0 - tail.0).abs();
     let dy = (head.1 - tail.1).abs();
@@ -104,6 +131,16 @@ L 5
 R 2
 "#;
 
+    const LONG_EXAMPLE: &str = r#"R 5
+U 8
+L 8
+D 3
+R 17
+D 10
+L 25
+U 20
+"#;
+
     #[test]
     fn count_tail_tiles_works_for_example() {
         // given
@@ -114,5 +151,17 @@ R 2
 
         // then
         assert_eq!(count, 13);
+    }
+
+    #[test]
+    fn count_long_tail_tiles_works_for_example() {
+        // given
+        let instructions = parse_instructions(LONG_EXAMPLE).expect("expected successfil parsing");
+
+        // when
+        let count = count_long_tail_tiles(&instructions);
+
+        // then
+        assert_eq!(count, 36);
     }
 }
