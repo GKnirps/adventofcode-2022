@@ -9,8 +9,9 @@ fn main() -> Result<(), String> {
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let instructions = parse_instructions(&content)?;
 
-    let signal_strength_sum = run_and_inspect(&instructions);
+    let (signal_strength_sum, screen) = run_and_inspect(&instructions);
     println!("The signal strength sum is {signal_strength_sum}");
+    print_screen(&screen);
 
     Ok(())
 }
@@ -43,13 +44,14 @@ fn parse_instructions(input: &str) -> Result<Vec<Inst>, String> {
     input.lines().map(parse_instruction).collect()
 }
 
-fn run_and_inspect(instructions: &[Inst]) -> i64 {
+fn run_and_inspect(instructions: &[Inst]) -> (i64, Vec<bool>) {
     let mut x: i64 = 1;
     let mut sig_strength: i64 = 0;
     let mut cycle_count: i64 = 0;
+    let mut screen: Vec<bool> = vec![false; 240];
 
     for inst in instructions {
-        if cycle_count > 220 {
+        if cycle_count > 240 {
             break;
         }
         match inst {
@@ -57,18 +59,36 @@ fn run_and_inspect(instructions: &[Inst]) -> i64 {
                 if cycle_count % 40 == 19 {
                     sig_strength += x * (20 + 40 * (cycle_count / 40));
                 }
+                if let Some(pixel) = screen.get_mut(cycle_count as usize) {
+                    *pixel |= cycle_count % 40 >= x - 1 && cycle_count % 40 <= x + 1;
+                }
                 cycle_count += 1;
             }
             Inst::Addx(v) => {
                 if cycle_count % 40 == 18 || cycle_count % 40 == 19 {
                     sig_strength += x * (20 + 40 * (cycle_count / 40));
                 }
+                if let Some(pixel) = screen.get_mut(cycle_count as usize) {
+                    *pixel |= cycle_count % 40 >= x - 1 && cycle_count % 40 <= x + 1;
+                }
+                if let Some(pixel) = screen.get_mut((cycle_count + 1) as usize) {
+                    *pixel |= (cycle_count + 1) % 40 >= x - 1 && (cycle_count + 1) % 40 <= x + 1;
+                }
                 x += v;
                 cycle_count += 2;
             }
         };
     }
-    sig_strength
+    (sig_strength, screen)
+}
+
+fn print_screen(pixels: &[bool]) {
+    for row in pixels.chunks_exact(40) {
+        for p in row {
+            print!("{}", if *p { '█' } else { '░' });
+        }
+        println!()
+    }
 }
 
 #[cfg(test)]
@@ -79,12 +99,26 @@ mod test {
     fn run_and_inspect_works_for_example() {
         // given
         let instructions = parse_instructions(EXAMPLE).expect("expected successful parsing");
+        let expected_screen: Vec<bool> = EXAMPLE_SCREEN
+            .chars()
+            .filter_map(|c| match c {
+                '#' => Some(true),
+                '.' => Some(false),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(expected_screen.len(), 240);
 
         // when
-        let sum = run_and_inspect(&instructions);
+        let (sum, screen) = run_and_inspect(&instructions);
 
         // then
         assert_eq!(sum, 13140);
+        println!("actual:");
+        print_screen(&screen);
+        println!("expected:");
+        print_screen(&expected_screen);
+        assert_eq!(screen, expected_screen);
     }
 
     const EXAMPLE: &str = r#"addx 15
@@ -233,5 +267,13 @@ addx -11
 noop
 noop
 noop
+"#;
+
+    const EXAMPLE_SCREEN: &str = r#"##..##..##..##..##..##..##..##..##..##..
+###...###...###...###...###...###...###.
+####....####....####....####....####....
+#####.....#####.....#####.....#####.....
+######......######......######......####
+#######.......#######.......#######.....
 "#;
 }
