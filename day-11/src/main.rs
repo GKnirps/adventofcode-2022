@@ -10,9 +10,13 @@ fn main() -> Result<(), String> {
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let monkeys = parse_monkeys(&content)?;
 
-    let monkeys_after_20 = run_rounds(monkeys, 20)?;
+    let monkeys_after_20 = run_rounds(monkeys.clone(), 20, 3)?;
     let mb = monkey_business(&monkeys_after_20);
     println!("After 20 rounds, the monkey business is {mb}.");
+
+    let monkeys_unlimited_10000 = run_rounds(monkeys, 10000, 1)?;
+    let mb = monkey_business(&monkeys_unlimited_10000);
+    println!("After 10000 rounds with unlimited worry level, the monkey business is {mb}");
 
     Ok(())
 }
@@ -140,15 +144,20 @@ fn parse_monkeys(input: &str) -> Result<Vec<Monkey>, String> {
         .collect()
 }
 
-fn next_round(mut monkeys: Vec<Monkey>) -> Result<Vec<Monkey>, String> {
+fn next_round(
+    mut monkeys: Vec<Monkey>,
+    worry_level_divisor: u64,
+    worry_level_mod: u64,
+) -> Result<Vec<Monkey>, String> {
     for monkey_i in 0..monkeys.len() {
         // this is assuming that a monkey never throws items to itself
         for item_i in 0..monkeys[monkey_i].items.len() {
             let monkey = &monkeys[monkey_i];
-            let worry_level = monkey.operator.run(
+            let worry_level = (monkey.operator.run(
                 monkey.items[item_i],
                 monkey.operand.unwrap_or(monkey.items[item_i]),
-            ) / 3;
+            ) / worry_level_divisor)
+                % worry_level_mod;
             let target_i = if worry_level % monkey.test_mod == 0 {
                 monkey.test_true
             } else {
@@ -176,9 +185,20 @@ fn next_round(mut monkeys: Vec<Monkey>) -> Result<Vec<Monkey>, String> {
     Ok(monkeys)
 }
 
-fn run_rounds(mut monkeys: Vec<Monkey>, rounds: u64) -> Result<Vec<Monkey>, String> {
+fn run_rounds(
+    mut monkeys: Vec<Monkey>,
+    rounds: u64,
+    worry_level_divisor: u64,
+) -> Result<Vec<Monkey>, String> {
+    // worry_level_divisor and worry_level_mod don't play nice together and I have no patience to
+    // figure out why, so I will only effectively use the modulo if there is a divisor != 1
+    let worry_level_mod: u64 = if worry_level_divisor == 1 {
+        monkeys.iter().map(|m| m.test_mod).product()
+    } else {
+        u64::MAX
+    };
     for _ in 0..rounds {
-        monkeys = next_round(monkeys)?;
+        monkeys = next_round(monkeys, worry_level_divisor, worry_level_mod)?;
     }
     Ok(monkeys)
 }
@@ -207,11 +227,24 @@ mod test {
         let monkeys = parse_monkeys(EXAMPLE).expect("expected successful parsing");
 
         // when
-        let result = run_rounds(monkeys, 20);
+        let result = run_rounds(monkeys, 20, 3);
 
         // then
         let after_20 = result.expect("expected successful run");
         assert_eq!(monkey_business(&after_20), 10605);
+    }
+
+    #[test]
+    fn run_rounds_works_for_unlimited_worry_level() {
+        // given
+        let monkeys = parse_monkeys(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let result = run_rounds(monkeys, 10000, 1);
+
+        // then
+        let after_20 = result.expect("expected successful run");
+        assert_eq!(monkey_business(&after_20), 2713310158);
     }
 
     const EXAMPLE: &str = r#"Monkey 0:
