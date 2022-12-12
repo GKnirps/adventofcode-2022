@@ -16,6 +16,10 @@ fn main() -> Result<(), String> {
         println!("There is no way to get up there. Good luck.");
     }
 
+    if let Some(len) = shortest_hiking_trail(&grid, endpos) {
+        println!("The shortest hiking trail is {len}");
+    }
+
     Ok(())
 }
 
@@ -129,6 +133,18 @@ fn shortest_path_length(grid: &Grid, start: P, end: P) -> Option<u32> {
     None
 }
 
+fn shortest_hiking_trail(grid: &Grid, end: P) -> Option<u32> {
+    // Let's brute force this with the previous shortest path alg, should be fine.
+    // I can think of at least two ways to make this more efficient, but doing it this way is more
+    // efficient on my development time.
+    grid.heights
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| **h == 0)
+        .filter_map(|(i, _)| shortest_path_length(grid, (i % grid.width, i / grid.width), end))
+        .min()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -150,5 +166,17 @@ abdefghi
 
         // then
         assert_eq!(len, Some(31));
+    }
+
+    #[test]
+    fn shortest_hiking_trail_works_for_example() {
+        // given
+        let (_, end, grid) = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let len = shortest_hiking_trail(&grid, end);
+
+        // then
+        assert_eq!(len, Some(29));
     }
 }
