@@ -13,6 +13,9 @@ fn main() -> Result<(), String> {
     let sum = ordered_pairs_index_sum(&pairs);
     println!("The sum of the indices of the correctly ordered pairs is {sum}");
 
+    let decoder_key = find_decoder_key(&pairs);
+    println!("The decoder key is {decoder_key}");
+
     Ok(())
 }
 
@@ -152,6 +155,25 @@ fn ordered_pairs_index_sum(pairs: &[(Packet, Packet)]) -> usize {
         .sum::<usize>()
 }
 
+fn find_decoder_key(pairs: &[(Packet, Packet)]) -> usize {
+    let divider2 = Packet::List(vec![Packet::List(vec![Packet::Int(2)])]);
+    let divider6 = Packet::List(vec![Packet::List(vec![Packet::Int(6)])]);
+    // we don't even have to sort this, we just need to calculate the number of smaller packets
+    let i_div2 = pairs
+        .iter()
+        .flat_map(|(a, b)| [a, b])
+        .filter(|p| *p < &divider2)
+        .count()
+        + 1;
+    let i_div6 = pairs
+        .iter()
+        .flat_map(|(a, b)| [a, b])
+        .filter(|p| *p < &divider6)
+        .count()
+        + 2;
+    i_div2 * i_div6
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -187,6 +209,18 @@ mod test {
 
         // then
         assert_eq!(sum, 13);
+    }
+
+    #[test]
+    fn find_decoder_key_works_for_example() {
+        // given
+        let pairs = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let key = find_decoder_key(&pairs);
+
+        // then
+        assert_eq!(key, 140);
     }
 
     const EXAMPLE: &str = r#"[1,1,3,1,1]
