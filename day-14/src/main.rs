@@ -10,8 +10,11 @@ fn main() -> Result<(), String> {
     let paths = parse_input(&content)?;
     let initial_cave = init_cave(&paths);
 
-    let settled_sand = drop_until_overflow(initial_cave);
+    let settled_sand = drop_until_overflow(initial_cave.clone());
     println!("{settled_sand} units of sand settle before the rest flows in the abyss below.");
+
+    let piled_sand = drop_to_floor_until_block(initial_cave);
+    println!("{piled_sand} units of sand have piled on the ground.");
 
     Ok(())
 }
@@ -25,7 +28,7 @@ fn parse_path(line: &str) -> Result<RockPath, String> {
                 .split_once(',')
                 .ok_or_else(|| format!("Unable to split pair '{pair}'"))?;
             let x: usize = xs
-                .parse()
+                .parse::<usize>()
                 .map_err(|e| format!("Unable to parse '{xs}' as usize: {e}"))?;
             let y: usize = ys
                 .parse()
@@ -43,7 +46,7 @@ const SAND_ORIGIN: usize = 500;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct Grid {
-    x_offset: usize,
+    offset: usize,
     width: usize,
     height: usize,
     tiles: Vec<bool>,
@@ -51,39 +54,34 @@ struct Grid {
 
 impl Grid {
     fn get(&self, x: usize, y: usize) -> Option<bool> {
-        if x < self.x_offset || x - self.x_offset >= self.width {
+        if x >= self.width {
             None
         } else {
             self.tiles
-                .get((x - self.x_offset) + self.width * y)
+                .get(x + self.offset + (self.width + self.offset) * y)
                 .copied()
         }
     }
 
     fn set(&mut self, x: usize, y: usize) {
-        if x < self.x_offset || x - self.x_offset >= self.width {
+        if x >= self.width {
             return;
         }
-        if let Some(tile) = self.tiles.get_mut((x - self.x_offset) + self.width * y) {
+        if let Some(tile) = self
+            .tiles
+            .get_mut(x + self.offset + (self.width + self.offset) * y)
+        {
             *tile = true;
         }
     }
 }
 
 fn init_cave(paths: &[RockPath]) -> Grid {
-    let min_x = paths
-        .iter()
-        .flat_map(|path| path.iter().map(|(x, _)| x))
-        .min()
-        .copied();
     let max_x = paths
         .iter()
         .flat_map(|path| path.iter().map(|(x, _)| x))
         .max()
         .copied();
-
-    let x_offset = min_x.unwrap_or(SAND_ORIGIN).min(SAND_ORIGIN);
-    let width = max_x.unwrap_or(SAND_ORIGIN).max(SAND_ORIGIN) - x_offset + 1;
 
     let height = paths
         .iter()
@@ -91,11 +89,14 @@ fn init_cave(paths: &[RockPath]) -> Grid {
         .max()
         .copied()
         .unwrap_or(0)
-        + 1;
+        + 2;
 
-    let tiles: Vec<bool> = vec![false; width * height];
+    let width = max_x.unwrap_or(SAND_ORIGIN).max(SAND_ORIGIN) + height;
+    let offset = height;
+
+    let tiles: Vec<bool> = vec![false; (width + offset) * height];
     let mut grid = Grid {
-        x_offset,
+        offset,
         width,
         height,
         tiles,
@@ -188,6 +189,52 @@ fn drop_until_overflow(mut grid: Grid) -> u32 {
     count
 }
 
+// return true if sand could be placed
+// panic if sand goes out of bound
+fn drop_sand_with_floor(grid: &mut Grid) -> bool {
+    if grid.get(SAND_ORIGIN, 0).unwrap_or(true) {
+        return false;
+    }
+    let mut x: usize = SAND_ORIGIN;
+    let mut y: usize = 0;
+    let mut moved = true;
+    while moved && y + 1 < grid.height {
+        moved = false;
+        if !grid.get(x, y + 1).unwrap() {
+            moved = true;
+            y += 1;
+            continue;
+        }
+        if x == 0 {
+            panic!("overflow on the left");
+        }
+        if !grid.get(x - 1, y + 1).unwrap() {
+            moved = true;
+            x -= 1;
+            y += 1;
+            continue;
+        }
+        if x + 1 >= grid.width {
+            panic!("overflow on the right");
+        }
+        if !grid.get(x + 1, y + 1).unwrap() {
+            moved = true;
+            x += 1;
+            y += 1;
+        }
+    }
+    grid.set(x, y);
+    true
+}
+
+fn drop_to_floor_until_block(mut grid: Grid) -> u32 {
+    let mut count = 0;
+    while drop_sand_with_floor(&mut grid) {
+        count += 1;
+    }
+    count
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -207,5 +254,18 @@ mod test {
 
         // then
         assert_eq!(count, 24);
+    }
+
+    #[test]
+    fn drop_to_floor_until_block_works_for_example() {
+        // given
+        let paths = parse_input(EXAMPLE).expect("expeced successful parsing");
+        let grid = init_cave(&paths);
+
+        // when
+        let count = drop_to_floor_until_block(grid);
+
+        // then
+        assert_eq!(count, 93);
     }
 }
