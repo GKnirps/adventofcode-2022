@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs::read_to_string;
 use std::path::Path;
@@ -8,18 +9,18 @@ fn main() -> Result<(), String> {
         .ok_or_else(|| "No file name given.".to_owned())?;
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let paths = parse_input(&content)?;
-    let initial_cave = init_cave(&paths);
+    let (initial_cave, height) = init_cave(&paths);
 
-    let settled_sand = drop_until_overflow(initial_cave.clone());
+    let settled_sand = drop_until_overflow(initial_cave.clone(), height);
     println!("{settled_sand} units of sand settle before the rest flows in the abyss below.");
 
-    let piled_sand = drop_to_floor_until_block(initial_cave);
+    let piled_sand = drop_to_floor_until_block(initial_cave, height);
     println!("{piled_sand} units of sand have piled on the ground.");
 
     Ok(())
 }
 
-type RockPath = Vec<(usize, usize)>;
+type RockPath = Vec<(i32, i32)>;
 
 fn parse_path(line: &str) -> Result<RockPath, String> {
     line.split(" -> ")
@@ -27,10 +28,10 @@ fn parse_path(line: &str) -> Result<RockPath, String> {
             let (xs, ys) = pair
                 .split_once(',')
                 .ok_or_else(|| format!("Unable to split pair '{pair}'"))?;
-            let x: usize = xs
-                .parse::<usize>()
+            let x: i32 = xs
+                .parse()
                 .map_err(|e| format!("Unable to parse '{xs}' as usize: {e}"))?;
-            let y: usize = ys
+            let y: i32 = ys
                 .parse()
                 .map_err(|e| format!("Unable to parse '{ys}' as usize: {e}"))?;
             Ok((x, y))
@@ -42,47 +43,9 @@ fn parse_input(input: &str) -> Result<Vec<RockPath>, String> {
     input.lines().map(parse_path).collect()
 }
 
-const SAND_ORIGIN: usize = 500;
+const SAND_ORIGIN: i32 = 500;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-struct Grid {
-    offset: usize,
-    width: usize,
-    height: usize,
-    tiles: Vec<bool>,
-}
-
-impl Grid {
-    fn get(&self, x: usize, y: usize) -> Option<bool> {
-        if x >= self.width {
-            None
-        } else {
-            self.tiles
-                .get(x + self.offset + (self.width + self.offset) * y)
-                .copied()
-        }
-    }
-
-    fn set(&mut self, x: usize, y: usize) {
-        if x >= self.width {
-            return;
-        }
-        if let Some(tile) = self
-            .tiles
-            .get_mut(x + self.offset + (self.width + self.offset) * y)
-        {
-            *tile = true;
-        }
-    }
-}
-
-fn init_cave(paths: &[RockPath]) -> Grid {
-    let max_x = paths
-        .iter()
-        .flat_map(|path| path.iter().map(|(x, _)| x))
-        .max()
-        .copied();
-
+fn init_cave(paths: &[RockPath]) -> (HashSet<(i32, i32)>, i32) {
     let height = paths
         .iter()
         .flat_map(|path| path.iter().map(|(_, y)| y))
@@ -91,26 +54,17 @@ fn init_cave(paths: &[RockPath]) -> Grid {
         .unwrap_or(0)
         + 2;
 
-    let width = max_x.unwrap_or(SAND_ORIGIN).max(SAND_ORIGIN) + height;
-    let offset = height;
-
-    let tiles: Vec<bool> = vec![false; (width + offset) * height];
-    let mut grid = Grid {
-        offset,
-        width,
-        height,
-        tiles,
-    };
+    let mut tiles: HashSet<(i32, i32)> = HashSet::with_capacity((height * height) as usize);
 
     for path in paths {
         for step in path.windows(2) {
-            draw_line(&mut grid, step[0], step[1]);
+            draw_line(&mut tiles, step[0], step[1]);
         }
     }
-    grid
+    (tiles, height)
 }
 
-fn sort(a: usize, b: usize) -> (usize, usize) {
+fn sort(a: i32, b: i32) -> (i32, i32) {
     if a > b {
         (b, a)
     } else {
@@ -118,16 +72,16 @@ fn sort(a: usize, b: usize) -> (usize, usize) {
     }
 }
 
-fn draw_line(grid: &mut Grid, (xa, ya): (usize, usize), (xb, yb): (usize, usize)) {
+fn draw_line(grid: &mut HashSet<(i32, i32)>, (xa, ya): (i32, i32), (xb, yb): (i32, i32)) {
     if xa == xb {
         let (yfrom, yto) = sort(ya, yb);
         for y in yfrom..=yto {
-            grid.set(xa, y);
+            grid.insert((xa, y));
         }
     } else if ya == yb {
         let (xfrom, xto) = sort(xa, xb);
         for x in xfrom..=xto {
-            grid.set(x, ya);
+            grid.insert((x, ya));
         }
     } else {
         eprintln!("line {xa},{ya} -> {xb},{yb} is parallel to any axis, ignoring line");
@@ -135,104 +89,83 @@ fn draw_line(grid: &mut Grid, (xa, ya): (usize, usize), (xb, yb): (usize, usize)
 }
 
 // return true if sand settled inside the grid
-fn drop_sand(grid: &mut Grid) -> bool {
-    if grid.get(SAND_ORIGIN, 0).unwrap_or(true) {
+fn drop_sand(grid: &mut HashSet<(i32, i32)>, height: i32) -> bool {
+    if grid.contains(&(SAND_ORIGIN, 0)) {
         eprintln!("Unable to spawn sand, space occupied.");
         return false;
     }
-    let mut x: usize = SAND_ORIGIN;
-    let mut y: usize = 0;
+    let mut x: i32 = SAND_ORIGIN;
+    let mut y: i32 = 0;
     let mut moved = true;
-    while moved {
+    while moved && y < height {
         moved = false;
-        if let Some(filled) = grid.get(x, y + 1) {
-            if !filled {
-                moved = true;
-                y += 1;
-                continue;
-            }
-        } else {
-            return false;
-        }
-        if x == 0 {
-            return false;
-        }
-        if let Some(filled) = grid.get(x - 1, y + 1) {
-            if !filled {
-                moved = true;
-                x -= 1;
-                y += 1;
-                continue;
-            }
-        } else {
-            return false;
-        }
-        if let Some(filled) = grid.get(x + 1, y + 1) {
-            if !filled {
-                moved = true;
-                x += 1;
-                y += 1;
-            }
-        } else {
-            return false;
-        }
-    }
-    grid.set(x, y);
-    true
-}
-
-fn drop_until_overflow(mut grid: Grid) -> u32 {
-    let mut count = 0;
-    while drop_sand(&mut grid) {
-        count += 1;
-    }
-    count
-}
-
-// return true if sand could be placed
-// panic if sand goes out of bound
-fn drop_sand_with_floor(grid: &mut Grid) -> bool {
-    if grid.get(SAND_ORIGIN, 0).unwrap_or(true) {
-        return false;
-    }
-    let mut x: usize = SAND_ORIGIN;
-    let mut y: usize = 0;
-    let mut moved = true;
-    while moved && y + 1 < grid.height {
-        moved = false;
-        if !grid.get(x, y + 1).unwrap() {
+        if !grid.contains(&(x, y + 1)) {
             moved = true;
             y += 1;
             continue;
         }
-        if x == 0 {
-            panic!("overflow on the left");
-        }
-        if !grid.get(x - 1, y + 1).unwrap() {
+        if !grid.contains(&(x - 1, y + 1)) {
             moved = true;
             x -= 1;
             y += 1;
             continue;
         }
-        if x + 1 >= grid.width {
-            panic!("overflow on the right");
-        }
-        if !grid.get(x + 1, y + 1).unwrap() {
+        if !grid.contains(&(x + 1, y + 1)) {
             moved = true;
             x += 1;
             y += 1;
         }
     }
-    grid.set(x, y);
+    if y < height {
+        grid.insert((x, y));
+        true
+    } else {
+        false
+    }
+}
+
+fn drop_until_overflow(mut grid: HashSet<(i32, i32)>, height: i32) -> usize {
+    let intial_blocks = grid.len();
+    while drop_sand(&mut grid, height) {}
+    grid.len() - intial_blocks
+}
+
+// return true if sand could be placed
+// panic if sand goes out of bound
+fn drop_sand_with_floor(grid: &mut HashSet<(i32, i32)>, height: i32) -> bool {
+    if grid.contains(&(SAND_ORIGIN, 0)) {
+        return false;
+    }
+    let mut x: i32 = SAND_ORIGIN;
+    let mut y: i32 = 0;
+    let mut moved = true;
+    while moved && y + 1 < height {
+        moved = false;
+        if !grid.contains(&(x, y + 1)) {
+            moved = true;
+            y += 1;
+            continue;
+        }
+        if !grid.contains(&(x - 1, y + 1)) {
+            moved = true;
+            x -= 1;
+            y += 1;
+            continue;
+        }
+        if !grid.contains(&(x + 1, y + 1)) {
+            moved = true;
+            x += 1;
+            y += 1;
+        }
+    }
+    grid.insert((x, y));
     true
 }
 
-fn drop_to_floor_until_block(mut grid: Grid) -> u32 {
-    let mut count = 0;
-    while drop_sand_with_floor(&mut grid) {
-        count += 1;
-    }
-    count
+fn drop_to_floor_until_block(mut grid: HashSet<(i32, i32)>, height: i32) -> usize {
+    let initial_blocks = grid.len();
+    while drop_sand_with_floor(&mut grid, height) {}
+    grid.len() - initial_blocks
 }
 
 #[cfg(test)]
@@ -247,10 +180,10 @@ mod test {
     fn drop_until_overflow_works_for_example() {
         // given
         let paths = parse_input(EXAMPLE).expect("expeced successful parsing");
-        let grid = init_cave(&paths);
+        let (grid, height) = init_cave(&paths);
 
         // when
-        let count = drop_until_overflow(grid);
+        let count = drop_until_overflow(grid, height);
 
         // then
         assert_eq!(count, 24);
@@ -260,10 +193,10 @@ mod test {
     fn drop_to_floor_until_block_works_for_example() {
         // given
         let paths = parse_input(EXAMPLE).expect("expeced successful parsing");
-        let grid = init_cave(&paths);
+        let (grid, height) = init_cave(&paths);
 
         // when
-        let count = drop_to_floor_until_block(grid);
+        let count = drop_to_floor_until_block(grid, height);
 
         // then
         assert_eq!(count, 93);
