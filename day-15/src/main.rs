@@ -12,6 +12,12 @@ fn main() -> Result<(), String> {
     let covered_in_row_2000000 = covered_cells_in_row(&sensors, 2000000);
     println!("In the row where y = 2000000, {covered_in_row_2000000} cells are covered.");
 
+    if let Some(freq) = find_tuning_frequency(&sensors) {
+        println!("The tuning frequency is {freq}.");
+    } else {
+        println!("Unable to find blind spot");
+    }
+
     Ok(())
 }
 
@@ -55,21 +61,23 @@ fn dist((x1, y1): P, (x2, y2): P) -> i64 {
     (x1 - x2).abs() + (y1 - y2).abs()
 }
 
-fn covered_cells_in_row(sensors: &[(P, P)], row: i64) -> i64 {
-    let mut ranges: Vec<(i64, bool)> = sensors
-        .iter()
-        .filter_map(|(sensor, beacon)| {
-            let range = dist(*sensor, *beacon);
-            let row_dist = (sensor.1 - row).abs();
-            if range >= row_dist {
-                let row_range = range - row_dist;
-                Some([(sensor.0 - row_range, false), (sensor.0 + row_range, true)])
-            } else {
-                None
-            }
-        })
-        .flatten()
-        .collect();
+fn row_ranges(sensors: &[(P, P)], row: i64, ranges: &mut Vec<(i64, bool)>) {
+    ranges.clear();
+    ranges.extend(
+        sensors
+            .iter()
+            .filter_map(|(sensor, beacon)| {
+                let range = dist(*sensor, *beacon);
+                let row_dist = (sensor.1 - row).abs();
+                if range >= row_dist {
+                    let row_range = range - row_dist;
+                    Some([(sensor.0 - row_range, false), (sensor.0 + row_range, true)])
+                } else {
+                    None
+                }
+            })
+            .flatten(),
+    );
 
     ranges.sort_unstable_by(|(v1, is_to1), (v2, is_to2)| {
         let ord = v1.cmp(v2);
@@ -79,6 +87,11 @@ fn covered_cells_in_row(sensors: &[(P, P)], row: i64) -> i64 {
             ord
         }
     });
+}
+
+fn covered_cells_in_row(sensors: &[(P, P)], row: i64) -> i64 {
+    let mut ranges = Vec::with_capacity(sensors.len() * 2);
+    row_ranges(sensors, row, &mut ranges);
 
     let mut depth: usize = 0;
     let mut from = i64::MIN;
@@ -97,6 +110,33 @@ fn covered_cells_in_row(sensors: &[(P, P)], row: i64) -> i64 {
         }
     }
     count
+}
+
+const SEARCH_LIMIT: i64 = 4_000_000;
+
+fn find_tuning_frequency(sensors: &[(P, P)]) -> Option<i64> {
+    let mut ranges = Vec::with_capacity(sensors.len() * 2);
+    // let's half-ass this. Checking each row should be reasonably fast with the approach chosen
+    // for part 1, so doing it 4M times should not be a problem.
+    // also: just take the first uncovered cell as result.
+    for y in 0..=SEARCH_LIMIT {
+        row_ranges(sensors, y, &mut ranges);
+        let mut depth: usize = 0;
+        let mut x = 0;
+        for (c, is_to) in ranges.iter().copied() {
+            if is_to {
+                depth -= 1;
+                x = c;
+            } else {
+                if depth == 0 && x + 1 < c {
+                    println!("x: {x}, y: {y}");
+                    return Some((x + 1) * SEARCH_LIMIT + y);
+                }
+                depth += 1;
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -129,5 +169,17 @@ Sensor at x=20, y=1: closest beacon is at x=15, y=3
 
         // then
         assert_eq!(count, 26);
+    }
+
+    #[test]
+    fn find_tuning_frequency_works_for_example() {
+        // given
+        let sensors = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let freq = find_tuning_frequency(&sensors);
+
+        // then
+        assert_eq!(freq, Some(56000011));
     }
 }
