@@ -165,6 +165,13 @@ fn opened_geodes(blueprint: &Blueprint, max_time: u32) -> u32 {
     let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(4096);
     let mut seen: HashSet<State> = HashSet::with_capacity(4096);
 
+    let max_ore_cost = blueprint
+        .ore_bot
+        .ore
+        .max(blueprint.clay_bot.ore)
+        .max(blueprint.obsi_bot.ore)
+        .max(blueprint.geode_bot.ore);
+
     queue.push(QueueEntry {
         state: State {
             res: Resources {
@@ -200,21 +207,26 @@ fn opened_geodes(blueprint: &Blueprint, max_time: u32) -> u32 {
             continue;
         }
 
-        if let Some(time) = time_to_build(&current, blueprint.ore_bot, time_left - 2) {
-            queue.push(QueueEntry {
-                state: State {
-                    res: Resources {
-                        ore: current.res.ore + time * current.ore_bots - blueprint.ore_bot.ore,
-                        clay: current.res.clay + time * current.clay_bots - blueprint.ore_bot.clay,
-                        obsidian: current.res.obsidian + time * current.obsi_bots
-                            - blueprint.ore_bot.obsidian,
+        // it does not make sense to build more ore bots than the amount of ore we can spent in the
+        // same time
+        if current.ore_bots < max_ore_cost {
+            if let Some(time) = time_to_build(&current, blueprint.ore_bot, time_left - 2) {
+                queue.push(QueueEntry {
+                    state: State {
+                        res: Resources {
+                            ore: current.res.ore + time * current.ore_bots - blueprint.ore_bot.ore,
+                            clay: current.res.clay + time * current.clay_bots
+                                - blueprint.ore_bot.clay,
+                            obsidian: current.res.obsidian + time * current.obsi_bots
+                                - blueprint.ore_bot.obsidian,
+                        },
+                        ore_bots: current.ore_bots + 1,
+                        ..current
                     },
-                    ore_bots: current.ore_bots + 1,
-                    ..current
-                },
-                geodes: current_geodes + time * current.geode_bots,
-                time_left: time_left - time,
-            });
+                    geodes: current_geodes + time * current.geode_bots,
+                    time_left: time_left - time,
+                });
+            }
         }
         if let Some(time) = time_to_build(&current, blueprint.clay_bot, time_left - 2) {
             queue.push(QueueEntry {
