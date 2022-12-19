@@ -1,4 +1,5 @@
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
 use std::env;
 use std::fs::read_to_string;
 use std::path::Path;
@@ -10,8 +11,20 @@ fn main() -> Result<(), String> {
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let blueprints = parse_blueprints(&content)?;
 
-    let sum_ql: u32 = blueprints.iter().map(quality_level).sum();
+    let sum_ql: u32 = blueprints
+        .iter()
+        .inspect(|bp| println!("Checking blueprint {}", bp.id))
+        .map(quality_level)
+        .sum();
     println!("The sum of the quality level of all blueprints is {sum_ql}.");
+
+    let max_geodes_product: u32 = blueprints
+        .iter()
+        .take(3)
+        .inspect(|bp| println!("Checking blueprint {}", bp.id))
+        .map(|bp| opened_geodes(bp, 32))
+        .product();
+    println!("The product of open geodes in 32 minutes for the first three blueprints is {max_geodes_product}.");
 
     Ok(())
 }
@@ -111,93 +124,133 @@ fn parse_blueprints(input: &str) -> Result<Vec<Blueprint>, String> {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct State {
     res: Resources,
-    geodes: u32,
     ore_bots: u32,
     clay_bots: u32,
     obsi_bots: u32,
     geode_bots: u32,
-    time_left: u32,
 }
 
 fn quality_level(blueprint: &Blueprint) -> u32 {
-    let mut queue: VecDeque<State> = VecDeque::with_capacity(4096);
+    opened_geodes(blueprint, 24) * blueprint.id
+}
+
+#[derive(Clone, Eq, Debug)]
+struct QueueEntry {
+    state: State,
+    geodes: u32,
+    time_left: u32,
+}
+
+impl Ord for QueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.time_left
+            .cmp(&other.time_left)
+            .then(self.geodes.cmp(&other.geodes))
+    }
+}
+
+impl PartialOrd for QueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for QueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+fn opened_geodes(blueprint: &Blueprint, max_time: u32) -> u32 {
+    let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(4096);
     let mut seen: HashSet<State> = HashSet::with_capacity(4096);
 
-    queue.push_back(State {
-        res: Resources {
-            ore: 0,
-            clay: 0,
-            obsidian: 0,
+    queue.push(QueueEntry {
+        state: State {
+            res: Resources {
+                ore: 0,
+                clay: 0,
+                obsidian: 0,
+            },
+            ore_bots: 1,
+            clay_bots: 0,
+            obsi_bots: 0,
+            geode_bots: 0,
         },
         geodes: 0,
-        ore_bots: 1,
-        clay_bots: 0,
-        obsi_bots: 0,
-        geode_bots: 0,
-        time_left: 24,
+        time_left: max_time,
     });
 
     let mut max_geodes: u32 = 0;
 
-    while let Some(current) = queue.pop_front() {
+    while let Some(QueueEntry {
+        state: current,
+        geodes: current_geodes,
+        time_left,
+    }) = queue.pop()
+    {
         if seen.contains(&current) {
             continue;
         }
         seen.insert(current.clone());
 
-        max_geodes = max_geodes.max(current.geodes + current.time_left * current.geode_bots);
+        max_geodes = max_geodes.max(current_geodes + time_left * current.geode_bots);
 
-        if let Some(time) = time_to_build(&current, blueprint.ore_bot) {
-            if time <= current.time_left {
-                queue.push_back(State {
+        if time_left <= 1 {
+            continue;
+        }
+
+        if let Some(time) = time_to_build(&current, blueprint.ore_bot, time_left - 2) {
+            queue.push(QueueEntry {
+                state: State {
                     res: Resources {
                         ore: current.res.ore + time * current.ore_bots - blueprint.ore_bot.ore,
                         clay: current.res.clay + time * current.clay_bots - blueprint.ore_bot.clay,
                         obsidian: current.res.obsidian + time * current.obsi_bots
                             - blueprint.ore_bot.obsidian,
                     },
-                    geodes: current.geodes + time * current.geode_bots,
                     ore_bots: current.ore_bots + 1,
-                    time_left: current.time_left - time,
                     ..current
-                });
-            }
+                },
+                geodes: current_geodes + time * current.geode_bots,
+                time_left: time_left - time,
+            });
         }
-        if let Some(time) = time_to_build(&current, blueprint.clay_bot) {
-            if time <= current.time_left {
-                queue.push_back(State {
+        if let Some(time) = time_to_build(&current, blueprint.clay_bot, time_left - 2) {
+            queue.push(QueueEntry {
+                state: State {
                     res: Resources {
                         ore: current.res.ore + time * current.ore_bots - blueprint.clay_bot.ore,
                         clay: current.res.clay + time * current.clay_bots - blueprint.clay_bot.clay,
                         obsidian: current.res.obsidian + time * current.obsi_bots
                             - blueprint.clay_bot.obsidian,
                     },
-                    geodes: current.geodes + time * current.geode_bots,
                     clay_bots: current.clay_bots + 1,
-                    time_left: current.time_left - time,
                     ..current
-                });
-            }
+                },
+                geodes: current_geodes + time * current.geode_bots,
+                time_left: time_left - time,
+            });
         }
-        if let Some(time) = time_to_build(&current, blueprint.obsi_bot) {
-            if time <= current.time_left {
-                queue.push_back(State {
+        if let Some(time) = time_to_build(&current, blueprint.obsi_bot, time_left - 2) {
+            queue.push(QueueEntry {
+                state: State {
                     res: Resources {
                         ore: current.res.ore + time * current.ore_bots - blueprint.obsi_bot.ore,
                         clay: current.res.clay + time * current.clay_bots - blueprint.obsi_bot.clay,
                         obsidian: current.res.obsidian + time * current.obsi_bots
                             - blueprint.obsi_bot.obsidian,
                     },
-                    geodes: current.geodes + time * current.geode_bots,
                     obsi_bots: current.obsi_bots + 1,
-                    time_left: current.time_left - time,
                     ..current
-                });
-            }
+                },
+                geodes: current_geodes + time * current.geode_bots,
+                time_left: time_left - time,
+            });
         }
-        if let Some(time) = time_to_build(&current, blueprint.geode_bot) {
-            if time <= current.time_left {
-                queue.push_back(State {
+        if let Some(time) = time_to_build(&current, blueprint.geode_bot, time_left) {
+            queue.push(QueueEntry {
+                state: State {
                     res: Resources {
                         ore: current.res.ore + time * current.ore_bots - blueprint.geode_bot.ore,
                         clay: current.res.clay + time * current.clay_bots
@@ -205,19 +258,20 @@ fn quality_level(blueprint: &Blueprint) -> u32 {
                         obsidian: current.res.obsidian + time * current.obsi_bots
                             - blueprint.geode_bot.obsidian,
                     },
-                    geodes: current.geodes + time * current.geode_bots,
                     geode_bots: current.geode_bots + 1,
-                    time_left: current.time_left - time,
                     ..current
-                });
-            }
+                },
+
+                geodes: current_geodes + time * current.geode_bots,
+                time_left: time_left - time,
+            });
         }
     }
 
-    max_geodes * blueprint.id
+    max_geodes
 }
 
-fn time_to_build(state: &State, cost: Resources) -> Option<u32> {
+fn time_to_build(state: &State, cost: Resources, time_left: u32) -> Option<u32> {
     let ore_time = if state.res.ore >= cost.ore {
         0
     } else {
@@ -245,7 +299,14 @@ fn time_to_build(state: &State, cost: Resources) -> Option<u32> {
             .map(|cost| cost + u32::from(to_produce.checked_rem(state.obsi_bots) != Some(0)))?
     };
 
-    Some(ore_time.max(clay_time).max(obsi_time) + 1)
+    let time = ore_time.max(clay_time).max(obsi_time) + 1;
+
+    // if no time is left after building it, it does not help
+    if time < time_left {
+        Some(time)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
