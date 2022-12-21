@@ -16,6 +16,12 @@ fn main() -> Result<(), String> {
         println!("I can't find a value for the root monkey!");
     }
 
+    if let Some(value) = human_value(&monkeys) {
+        println!("You must yell the numner {value} to satisfy the equation");
+    } else {
+        println!("I have no idea what number to yell.");
+    }
+
     Ok(())
 }
 
@@ -90,7 +96,37 @@ fn action_value(action: Action, values: &HashMap<&str, i64>) -> Option<i64> {
     })
 }
 
-fn find_root_value(monkeys: &[Monkey]) -> Option<i64> {
+fn reverse_action_value<'s>(
+    action: Action<'s>,
+    values: &HashMap<&str, i64>,
+    result: i64,
+) -> Option<(&'s str, i64)> {
+    match action {
+        Action::Lit(_) => None,
+        Action::Add(l, r) => match (values.get(l), values.get(r)) {
+            (Some(vl), None) => Some((r, result - vl)),
+            (None, Some(vr)) => Some((l, result - vr)),
+            _ => None,
+        },
+        Action::Sub(l, r) => match (values.get(l), values.get(r)) {
+            (Some(vl), None) => Some((r, vl - result)),
+            (None, Some(vr)) => Some((l, result + vr)),
+            _ => None,
+        },
+        Action::Mul(l, r) => match (values.get(l), values.get(r)) {
+            (Some(vl), None) => Some((r, result / vl)),
+            (None, Some(vr)) => Some((l, result / vr)),
+            _ => None,
+        },
+        Action::Div(l, r) => match (values.get(l), values.get(r)) {
+            (Some(vl), None) => Some((r, vl / result)),
+            (None, Some(vr)) => Some((l, result * vr)),
+            _ => None,
+        },
+    }
+}
+
+fn monkey_values<'s>(monkeys: &[Monkey<'s>]) -> HashMap<&'s str, i64> {
     // let's try a simple (but quadratic) solution first
     let mut values: HashMap<&str, i64> = HashMap::with_capacity(monkeys.len());
 
@@ -107,7 +143,49 @@ fn find_root_value(monkeys: &[Monkey]) -> Option<i64> {
             }
         }
     }
-    values.get("root").copied()
+    values
+}
+
+fn find_root_value(monkeys: &[Monkey]) -> Option<i64> {
+    monkey_values(monkeys).get("root").copied()
+}
+
+fn human_value(monkeys: &[Monkey]) -> Option<i64> {
+    let non_root_monkeys: Vec<Monkey> = monkeys
+        .iter()
+        .filter(|monkey| monkey.name != "humn" && monkey.name != "root")
+        .copied()
+        .collect();
+    let partial_values = monkey_values(&non_root_monkeys);
+    let monkeys_by_name: HashMap<&str, Monkey> = monkeys
+        .iter()
+        .map(|monkey| (monkey.name, *monkey))
+        .collect();
+
+    // Assumption for this solution: there is only on path from root to humn.
+    // For more general cases, this approach won't work
+    let root_monkey = monkeys_by_name.get("root")?;
+    let (lhs, rhs) = match root_monkey.action {
+        Action::Lit(_) => return None,
+        Action::Add(l, r) => (l, r),
+        Action::Sub(l, r) => (l, r),
+        Action::Mul(l, r) => (l, r),
+        Action::Div(l, r) => (l, r),
+    };
+    let (mut unknown, mut value) = match (partial_values.get(lhs), partial_values.get(rhs)) {
+        (Some(lv), None) => (rhs, *lv),
+        (None, Some(rv)) => (lhs, *rv),
+        _ => {
+            return None;
+        }
+    };
+    loop {
+        if unknown == "humn" {
+            return Some(value);
+        }
+        (unknown, value) =
+            reverse_action_value(monkeys_by_name.get(unknown)?.action, &partial_values, value)?;
+    }
 }
 
 #[cfg(test)]
@@ -141,5 +219,17 @@ hmdt: 32
 
         // then
         assert_eq!(result, Some(152));
+    }
+
+    #[test]
+    fn human_value_works_for_example() {
+        // given
+        let monkeys = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let result = human_value(&monkeys);
+
+        // then
+        assert_eq!(result, Some(301));
     }
 }
