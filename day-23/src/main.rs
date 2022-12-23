@@ -10,12 +10,15 @@ fn main() -> Result<(), String> {
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let elves = parse_input(&content);
 
-    let elves_after_10 = run_rounds(elves, 10);
+    let elves_after_10 = run_rounds(elves.clone(), 10);
     if let Some(a) = empty_squares(&elves_after_10) {
         println!("After 10 rounds, there are {a} empty squares in the bounding rectangle around the elves");
     } else {
         println!("Elves? I didn't see any elves.");
     }
+
+    let rounds = run_until_stagnant(elves);
+    println!("In round {rounds}, no elf moved");
 
     Ok(())
 }
@@ -38,7 +41,7 @@ fn parse_input(input: &str) -> HashSet<P> {
         .collect()
 }
 
-fn do_round(elves: &mut HashSet<P>, round_index: usize) {
+fn do_round(elves: &mut HashSet<P>, round_index: usize) -> bool {
     let mut proposals: HashMap<P, Option<P>> = HashMap::with_capacity(elves.len());
     for (x, y) in elves.iter().copied() {
         let nw = elves.contains(&(x - 1, y - 1));
@@ -76,12 +79,15 @@ fn do_round(elves: &mut HashSet<P>, round_index: usize) {
         }
     }
 
+    let mut moved = false;
     for (to, maybe_from) in proposals.iter() {
         if let Some(from) = maybe_from {
             elves.remove(from);
             elves.insert(*to);
+            moved = true;
         }
     }
+    moved
 }
 
 fn run_rounds(mut elves: HashSet<P>, rounds: usize) -> HashSet<P> {
@@ -89,6 +95,14 @@ fn run_rounds(mut elves: HashSet<P>, rounds: usize) -> HashSet<P> {
         do_round(&mut elves, i);
     }
     elves
+}
+
+fn run_until_stagnant(mut elves: HashSet<P>) -> usize {
+    let mut round_counter = 0;
+    while do_round(&mut elves, round_counter) {
+        round_counter += 1;
+    }
+    round_counter + 1
 }
 
 fn empty_squares(elves: &HashSet<P>) -> Option<i64> {
@@ -172,6 +186,18 @@ mod test {
 
         // then
         assert_eq!(elves, expected_elves);
+    }
+
+    #[test]
+    fn run_until_stagnant_works_for_example() {
+        // given
+        let elves = parse_input(EXAMPLE);
+
+        // when
+        let rounds = run_until_stagnant(elves);
+
+        // then
+        assert_eq!(rounds, 20);
     }
 
     #[test]
