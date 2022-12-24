@@ -10,10 +10,16 @@ fn main() -> Result<(), String> {
     let content = read_to_string(Path::new(&filename)).map_err(|e| e.to_string())?;
     let blizz = parse_input(&content)?;
 
-    if let Some(time) = shortest_path(&blizz) {
+    if let Some(time) = shortest_path(&blizz, 0) {
         println!("The shortest path through the blizzard takes {time} minutes.");
     } else {
         println!("There is no way to get though this blizzard.");
+    }
+
+    if let Some(time) = forgotten_snacks(&blizz) {
+        println!("I got your forgotten snacks in {time} minutes, happy?");
+    } else {
+        println!("I'm not going back through that blizzard for some snacks.");
     }
 
     Ok(())
@@ -39,6 +45,20 @@ impl Blizz {
                 [(x as isize - time as isize).rem_euclid(width as isize) as usize + y * width]
             || self.down
                 [x + (y as isize - time as isize).rem_euclid(height as isize) as usize * width]
+    }
+
+    fn rot_180(&self) -> Self {
+        let right = self.left.iter().rev().copied().collect();
+        let left = self.right.iter().rev().copied().collect();
+        let down = self.up.iter().rev().copied().collect();
+        let up = self.down.iter().rev().copied().collect();
+        Blizz {
+            width: self.width,
+            right,
+            left,
+            up,
+            down,
+        }
     }
 }
 
@@ -77,7 +97,7 @@ fn parse_direction(input: &str, dir: char) -> Vec<bool> {
         .collect()
 }
 
-fn shortest_path(blizz: &Blizz) -> Option<usize> {
+fn shortest_path(blizz: &Blizz, start_time: usize) -> Option<usize> {
     let width = blizz.width;
     let height = blizz.right.len() / width;
     // in case this is too large, we can possibly maxe this value smaller by using the lcm of width
@@ -86,7 +106,7 @@ fn shortest_path(blizz: &Blizz) -> Option<usize> {
     let mut queue: VecDeque<(usize, isize, usize)> = VecDeque::with_capacity(1024);
     let mut seen: HashSet<(usize, isize, usize)> = HashSet::with_capacity(max_cycle);
 
-    queue.push_back((0, -1, 0));
+    queue.push_back((0, -1, start_time));
 
     while let Some((x, y, time)) = queue.pop_front() {
         if seen.contains(&(x, y, time % max_cycle)) {
@@ -124,6 +144,15 @@ fn shortest_path(blizz: &Blizz) -> Option<usize> {
     None
 }
 
+fn forgotten_snacks(blizz: &Blizz) -> Option<usize> {
+    let first_trip_time = shortest_path(&blizz, 0)?;
+    // Seriously? Do you _really_ need these snacks?
+    // Ok, I will turn this blizzard around!
+    let inv_blizz = blizz.rot_180();
+    let back_trip_time = shortest_path(&inv_blizz, first_trip_time)?;
+    shortest_path(&blizz, back_trip_time)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -142,10 +171,22 @@ mod test {
         let blizz = parse_input(EXAMPLE).expect("expected successful parsing");
 
         // when
-        let shortest_time = shortest_path(&blizz);
+        let shortest_time = shortest_path(&blizz, 0);
 
         // then
         assert_eq!(shortest_time, Some(18));
+    }
+
+    #[test]
+    fn forgotten_snacks_works_for_example() {
+        // given
+        let blizz = parse_input(EXAMPLE).expect("expected successful parsing");
+
+        // when
+        let shortest_time = forgotten_snacks(&blizz);
+
+        // then
+        assert_eq!(shortest_time, Some(54));
     }
 
     #[test]
